@@ -1,0 +1,3 @@
+[submodule "modules/ltrace"]
+	path = modules/ltrace
+	url = https://github.com/arcadia-moon/ltrace
