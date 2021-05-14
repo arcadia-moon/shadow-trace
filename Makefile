@@ -16,7 +16,7 @@ ltrace:
 build-ltrace:
 	cd ./modules/ltrace && \
 	./autogen.sh && \
-	./configure && \
+	./configure --without-elfutils && \
 	make
 
 install:

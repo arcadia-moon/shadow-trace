@@ -92,24 +92,28 @@ static int backtrace(unw_addr_space_t *as, pid_t pid, int error_code)
             std::string name = demangle(buf);
             char *debuginfo_path = NULL;
 
-            Dwfl_Callbacks callbacks;
-            callbacks.find_elf = dwfl_linux_proc_find_elf;
-            callbacks.find_debuginfo = dwfl_standard_find_debuginfo;
-            callbacks.debuginfo_path = &debuginfo_path;
-
-            Dwfl *dwfl = dwfl_begin(&callbacks);
-            
-            Dwarf_Addr addr = (uintptr_t)ip;
-
-            Dwfl_Module *module = dwfl_addrmodule(dwfl, addr);
-
-            Dwfl_Line *line = dwfl_getsrc(dwfl, addr);
-            if (line != NULL)
+            Dwfl *dwfl = nullptr;
             {
+                Dwfl_Callbacks callbacks = {};
+                char *debuginfo_path = nullptr;
+                callbacks.find_elf = dwfl_linux_proc_find_elf;
+                callbacks.find_debuginfo = dwfl_standard_find_debuginfo;
+                callbacks.debuginfo_path = &debuginfo_path;
+                dwfl = dwfl_begin(&callbacks);
+                assert(dwfl);
+                int r;
+                r = dwfl_linux_proc_report(dwfl, pid);
+                assert(!r);
+                r = dwfl_report_end(dwfl, nullptr, nullptr);
+                assert(!r);
+                static_cast<void>(r);
+            }
+            Dwfl_Module* module = dwfl_addrmodule(dwfl, (uintptr_t)ip);
+            if (Dwfl_Line* dwfl_line = dwfl_module_getsrc(module, (uintptr_t)ip)) {
                 int nline;
                 Dwarf_Addr addr;
-                std::string filename(dwfl_lineinfo(line, &addr, &nline, NULL, NULL, NULL));
-                //fprintf(out, "%s:%d", strrchr(filename, '/') + 1, nline);
+                char const* file = dwfl_lineinfo(dwfl_line, &addr, &nline, nullptr, nullptr, nullptr);
+                std::string filename(file);
                 CallLibraryInfo CallLibraryInfo(ip, name, off, filename, nline);
                 v_backtrace.push_back(CallLibraryInfo);
             }
@@ -148,7 +152,7 @@ static int backtrace(unw_addr_space_t *as, pid_t pid, int error_code)
         {
             if (i->file_line >= 0)
             {
-                *logger_stream << (void *)i->instruction_pointer << " " << i->function_name << i->file_name << i->file_line << "\n";
+                *logger_stream << (void *)i->instruction_pointer << " " << i->function_name << i->file_name << " " << i->file_line << "\n";
             }
             else
             {
