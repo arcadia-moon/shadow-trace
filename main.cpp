@@ -10,7 +10,9 @@ extern "C"
 #include <link.h>
 #include <dlfcn.h>
 #include <elf.h>
+#include <unistd.h>
 #include <cxxabi.h>
+#include <elfutils/libdwfl.h>
 #include <libunwind.h>
 #include <libunwind-x86_64.h>
 #include <libunwind-ptrace.h>
@@ -50,6 +52,7 @@ std::string demangle(const char *name)
 
     return (status == 0) ? res.get() : name;
 }
+
 static int backtrace(unw_addr_space_t *as, pid_t pid, int error_code)
 {
     unw_word_t ip, sp, off, return_value;
@@ -87,8 +90,34 @@ static int backtrace(unw_addr_space_t *as, pid_t pid, int error_code)
         if ((ret = unw_get_proc_name(&unw_c, buf, sizeof(buf), &off)) == 0)
         {
             std::string name = demangle(buf);
-            CallLibraryInfo CallLibraryInfo(ip, name, off);
-            v_backtrace.push_back(CallLibraryInfo);
+            char *debuginfo_path = NULL;
+
+            Dwfl_Callbacks callbacks;
+            callbacks.find_elf = dwfl_linux_proc_find_elf;
+            callbacks.find_debuginfo = dwfl_standard_find_debuginfo;
+            callbacks.debuginfo_path = &debuginfo_path;
+
+            Dwfl *dwfl = dwfl_begin(&callbacks);
+            
+            Dwarf_Addr addr = (uintptr_t)ip;
+
+            Dwfl_Module *module = dwfl_addrmodule(dwfl, addr);
+
+            Dwfl_Line *line = dwfl_getsrc(dwfl, addr);
+            if (line != NULL)
+            {
+                int nline;
+                Dwarf_Addr addr;
+                std::string filename(dwfl_lineinfo(line, &addr, &nline, NULL, NULL, NULL));
+                //fprintf(out, "%s:%d", strrchr(filename, '/') + 1, nline);
+                CallLibraryInfo CallLibraryInfo(ip, name, off, filename, nline);
+                v_backtrace.push_back(CallLibraryInfo);
+            }
+            else
+            {
+                CallLibraryInfo CallLibraryInfo(ip, name, off);
+                v_backtrace.push_back(CallLibraryInfo);
+            }
         }
         else
         {
@@ -117,7 +146,14 @@ static int backtrace(unw_addr_space_t *as, pid_t pid, int error_code)
         *logger_stream << "ERROR CODE : " << error_code << "\n";
         for (std::vector<CallLibraryInfo>::const_iterator i = v_backtrace.begin(); i != v_backtrace.end(); ++i)
         {
-            *logger_stream << (void *)i->instruction_pointer << " " << i->function_name << "\n";
+            if (i->file_line >= 0)
+            {
+                *logger_stream << (void *)i->instruction_pointer << " " << i->function_name << i->file_name << i->file_line << "\n";
+            }
+            else
+            {
+                *logger_stream << (void *)i->instruction_pointer << " " << i->function_name << "\n";
+            }
         }
 
         *logger_stream << "------------- end -------------\n";
