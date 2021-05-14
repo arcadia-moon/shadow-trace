@@ -152,7 +152,7 @@ static int backtrace(unw_addr_space_t *as, pid_t pid, int error_code)
         {
             if (i->file_line >= 0)
             {
-                *logger_stream << (void *)i->instruction_pointer << " " << i->function_name << i->file_name << " " << i->file_line << "\n";
+                *logger_stream << (void *)i->instruction_pointer << " " << i->function_name << " " << i->file_name << " " << i->file_line << "\n";
             }
             else
             {
